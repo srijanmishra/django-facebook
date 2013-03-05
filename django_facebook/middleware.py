@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.contrib import auth
+from django.contrib.auth.views import login
 import facebook
 import datetime
 
@@ -74,20 +75,20 @@ class FacebookMiddleware(object):
         fb_user = facebook.get_user_from_cookie(request.COOKIES,
             settings.FACEBOOK_APP_ID, settings.FACEBOOK_SECRET_KEY)
         if fb_user:
-          fb_user['method'] = 'cookie'
+            fb_user['method'] = 'cookie'
         return fb_user
 
     def get_fb_user_canvas(self, request):
         """ Attempt to find a user using a signed_request (canvas). """
         fb_user = None
-        if request.POST.get('signed_request'):
-            signed_request = request.POST["signed_request"]
+        if request.POST.get("authResponse[signedRequest]"):
+            signed_request = request.POST["authResponse[signedRequest]"]
             data = facebook.parse_signed_request(signed_request, settings.FACEBOOK_SECRET_KEY)
             if data and data.get('user_id'):
-                fb_user = data['user']
+                fb_user = data
                 fb_user['method'] = 'canvas'
                 fb_user['uid'] = data['user_id']
-                fb_user['access_token'] = data['oauth_token']
+                fb_user['access_token'] = request.POST["authResponse[accessToken]"]
         return fb_user
 
     def get_fb_user(self, request):
@@ -122,11 +123,14 @@ class FacebookMiddleware(object):
         """
         fb_user = self.get_fb_user(request)
         request.facebook = DjangoFacebook(fb_user) if fb_user else None
-
+        
         if fb_user and request.user.is_anonymous():
             user = auth.authenticate(fb_uid=fb_user['uid'], fb_graphtoken=fb_user['access_token'])
             if user:
                 user.last_login = datetime.datetime.now()
                 user.save()
+                login(request, user)
+                if user.is_authenticated:
+                    print "success"
                 request.user = user
         return None
